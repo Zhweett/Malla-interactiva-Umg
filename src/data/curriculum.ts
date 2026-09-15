@@ -215,6 +215,12 @@ export const prerequisites: [string, string][] = [
   ["propinv",  "proyculm"],
 ];
 
+export const creditLocks: Record<string, number> = {
+  proyculm: 0.75,   // ej: Proyecto Culminante exige 75% de créditos aprobados
+  elecprofA: 0.60,
+  elecprofB: 0.60,
+};
+
 export const YEAR_COLORS: Record<number, { bg: string; header: string }> = {
   1: { bg: "#fce8e2", header: "#1a4c5e" },
   2: { bg: "#e2f0e2", header: "#1a4c5e" },
@@ -248,4 +254,29 @@ export const creditsOf = (ids: Iterable<string>): number => {
   let sum = 0;
   for (const id of ids) sum += courseById.get(id)?.credits ?? 0;
   return sum;
+};
+export const isCourseUnlocked = (
+  id: string,
+  approvedIds: Set<string>,
+): boolean => {
+  const prereqsOk = prereqsOf(id).every((p) => approvedIds.has(p));
+  if (!prereqsOk) return false;
+
+  const minPercent = creditLocks[id];
+  if (minPercent !== undefined) {
+    const approvedCredits = creditsOf(approvedIds);
+    if (approvedCredits / TOTAL_CREDITS < minPercent) return false;
+  }
+  return true;
+};
+
+export const creditsMissingFor = (
+  id: string,
+  approvedIds: Set<string>,
+): number => {
+  const minPercent = creditLocks[id];
+  if (minPercent === undefined) return 0;
+  const needed = Math.ceil(minPercent * TOTAL_CREDITS);
+  const approvedCredits = creditsOf(approvedIds);
+  return Math.max(0, needed - approvedCredits);
 };
