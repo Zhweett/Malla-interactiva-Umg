@@ -216,9 +216,11 @@ export const prerequisites: [string, string][] = [
 ];
 
 export const creditLocks: Record<string, number> = {
-  proyculm: 0.75,   // ej: Proyecto Culminante exige 75% de créditos aprobados
-  elecprofA: 0.60,
-  elecprofB: 0.60,
+  disproto: 0,30,
+  ingproy: 0,70,
+  deonto: 0,70,
+  elecprofA: 0.75,
+  elecprofB: 0.75,
 };
 
 export const YEAR_COLORS: Record<number, { bg: string; header: string }> = {
