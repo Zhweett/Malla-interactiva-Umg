@@ -3,8 +3,10 @@ import SiteHeader from "@/components/SiteHeader";
 import {
   allCourses,
   courseById,
+  creditsMissingFor,
   creditsOf,
   INK,
+  isCourseUnlocked,
   prereqsOf,
   semesters,
   TOTAL_CREDITS,
@@ -60,7 +62,7 @@ export default function AvancePage() {
 
   const missingPrereqs = (id: string) => prereqsOf(id).filter((p) => !approved.has(p));
 
-  const available = allCourses.filter((c) => !approved.has(c.id) && missingPrereqs(c.id).length === 0);
+  const available = allCourses.filter((c) => !approved.has(c.id) && isCourseUnlocked(c.id, approved));
   const irregular = allCourses.filter((c) => approved.has(c.id) && missingPrereqs(c.id).length > 0);
   const completeSemesters = semesters.filter((s) => s.courses.every((c) => approved.has(c.id)));
 
@@ -220,7 +222,15 @@ export default function AvancePage() {
                     {sem.courses.map((course) => {
                       const isDone = approved.has(course.id);
                       const missing = missingPrereqs(course.id);
-                      const isLocked = !isDone && missing.length > 0;
+                      const creditsNeeded = creditsMissingFor(course.id, approved);
+                      const isLocked = !isDone && (missing.length > 0 || creditsNeeded > 0);
+
+                      const lockReasons = [
+                        missing.length > 0
+                          ? `Requiere: ${missing.map((p) => courseById.get(p)?.name ?? p).join(", ")}`
+                          : null,
+                        creditsNeeded > 0 ? `Faltan ${creditsNeeded} créditos aprobados` : null,
+                      ].filter(Boolean);
 
                       return (
                         <li key={course.id} style={{ borderColor: "#f0f0f0" }}>
@@ -232,11 +242,7 @@ export default function AvancePage() {
                               background: isDone ? "#f0fff4" : "#fff",
                               transition: "background 0.15s",
                             }}
-                            title={
-                              isLocked
-                                ? `Requiere: ${missing.map((p) => courseById.get(p)?.name ?? p).join(", ")}`
-                                : undefined
-                            }
+                            title={isLocked ? lockReasons.join(" · ") : undefined}
                           >
                             <span
                               className="flex-none mt-0.5 flex items-center justify-center rounded-sm"
@@ -259,7 +265,10 @@ export default function AvancePage() {
                               </span>
                               {isLocked && (
                                 <span className="text-[10px] block mt-0.5" style={{ color: "#999" }}>
-                                  Requiere {missing.length} previa{missing.length > 1 ? "s" : ""}
+                                  {missing.length > 0 &&
+                                    `Requiere ${missing.length} previa${missing.length > 1 ? "s" : ""}`}
+                                  {missing.length > 0 && creditsNeeded > 0 && " · "}
+                                  {creditsNeeded > 0 && `Faltan ${creditsNeeded} créditos`}
                                 </span>
                               )}
                             </span>
