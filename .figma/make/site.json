@@ -1,0 +1,10 @@
+{
+  "description": "Visualiza el progreso académico mostrando materias desbloqueadas por semestre con flechas que indican prerequisitos para facilitar la planificación estudiantil.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
