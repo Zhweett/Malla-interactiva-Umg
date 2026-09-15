@@ -216,9 +216,9 @@ export const prerequisites: [string, string][] = [
 ];
 
 export const creditLocks: Record<string, number> = {
-  disproto: 0,30,
-  ingproy: 0,70,
-  deonto: 0,70,
+  disproto: 0.30,
+  ingproy: 0.70,
+  deonto: 0.70,
   elecprofA: 0.75,
   elecprofB: 0.75,
 };
