@@ -248,4 +248,39 @@ export const creditsOf = (ids: Iterable<string>): number => {
   let sum = 0;
   for (const id of ids) sum += courseById.get(id)?.credits ?? 0;
   return sum;
+
+  // Nuevo: materias que además del prerrequisito normal exigen un % de créditos aprobados
+export const creditLocks: Record<string, number> = {
+  proyculm: 0.75,   // ej: Proyecto Culminante exige 75% de créditos aprobados
+  elecprofA: 0.60,
+  elecprofB: 0.60,
+};
+
+/** Determina si una materia está desbloqueada dado un set de materias aprobadas. */
+export const isCourseUnlocked = (
+  id: string,
+  approvedIds: Set<string>,
+): boolean => {
+  const prereqsOk = prereqsOf(id).every((p) => approvedIds.has(p));
+  if (!prereqsOk) return false;
+
+  const minPercent = creditLocks[id];
+  if (minPercent !== undefined) {
+    const approvedCredits = creditsOf(approvedIds);
+    if (approvedCredits / TOTAL_CREDITS < minPercent) return false;
+  }
+  return true;
+};
+
+/** Créditos que faltan para desbloquear por porcentaje (útil para mostrar en UI). */
+export const creditsMissingFor = (
+  id: string,
+  approvedIds: Set<string>,
+): number => {
+  const minPercent = creditLocks[id];
+  if (minPercent === undefined) return 0;
+  const needed = Math.ceil(minPercent * TOTAL_CREDITS);
+  const approvedCredits = creditsOf(approvedIds);
+  return Math.max(0, needed - approvedCredits);
+};
 };
