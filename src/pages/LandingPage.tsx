@@ -21,6 +21,7 @@ const C = {
   gray400: "#9aa1ad",
   gray600: "#5a6272",
   gray800: "#2a3040",
+  dorado: "#d4a72c",
 };
 
 export default function LandingPage() {
@@ -36,7 +37,7 @@ export default function LandingPage() {
             <div style={{ width: 30, height: 30, borderRadius: 6, backgroundColor: C.orange500, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg viewBox="0 0 24 24" fill="white" width={17} height={17}><path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z"/></svg>
             </div>
-            <span style={{ fontFamily: "var(--font-display)", color: "white", fontSize: 17 }}>MallasUC</span>
+            <span style={{ fontFamily: "var(--font-display)", color: "white", fontSize: 17, width: "100%", display: "inline-block" }}>Mallas Interactiva</span>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 28 }} className="nav-links">
@@ -83,7 +84,7 @@ export default function LandingPage() {
               La malla de tu carrera,{" "}
               <em style={{ color: C.orange300 }}>clara y navegable.</em>
             </h1>
-            <p style={{ fontSize: 16, lineHeight: 1.75, color: C.navy200, fontWeight: 300, marginBottom: 32, maxWidth: 420 }}>
+            <p style={{ fontSize: 16, lineHeight: 1.75, color: C.dorado, fontWeight: 300, marginBottom: 32, maxWidth: 420 }}>
               Visualiza todas las asignaturas, sus prerrequisitos y créditos en un diagrama interactivo. Planifica tu semestre y lleva el control de tu avance.
             </p>
             <Link to="/malla" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 28px", borderRadius: 10, fontSize: 14, fontWeight: 600, backgroundColor: C.orange500, color: "white", textDecoration: "none" }}>
