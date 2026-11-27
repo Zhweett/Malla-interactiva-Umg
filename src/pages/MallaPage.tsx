@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
+import SemesterList from "@/components/SemesterList";
+import PlanNotice from "@/components/PlanNotice";
+import ProgressReset from "@/components/ProgressReset";
 import {
   getCareerPlan,
   INK,
-  TOTAL_YEARS,
-  YEAR_COLORS,
+  yearColor,
   type CareerId,
 } from "@/data/curriculum";
 import { useProgress } from "@/lib/progress";
@@ -12,7 +14,6 @@ import { useProgress } from "@/lib/progress";
 const ARROW_COLOR = "#6b1f82";
 const ARROW_CROSS_COLOR = "#d97706";
 const GREEN = "#1a7a3a";
-const AMBER = "#d97706";
 const CARD_W = 148;
 const COL_GAP = 44;
 const HOP_R = 5;
@@ -118,32 +119,25 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [arrows, setArrows] = useState<ProcessedArrow[]>([]);
-  const [svgW, setSvgW] = useState(5000);
-  const [svgH, setSvgH] = useState(2000);
+  const [svgW, setSvgW] = useState(0);
+  const [svgH, setSvgH] = useState(0);
   const [hovered, setHovered] = useState<string | null>(null);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const { approved, loaded, toggle, setMany, reset } = useProgress(careerId);
-
-  useEffect(() => {
-    setHovered(null);
-    setConfirmReset(false);
-    cardRefs.current = {};
-  }, [careerId]);
+  const { approved, grades, legacyGrades, saveError, toggle, setMany, reset } = useProgress(careerId);
 
   const approvedCredits = creditsOf(approved);
-  const percent = Math.round((approvedCredits / totalCredits) * 100);
+  const percent = totalCredits ? Math.round((approvedCredits / totalCredits) * 100) : 0;
   const available = allCourses.filter((c) => !approved.has(c.id) && isCourseUnlocked(c.id, approved));
   const completeSemesters = semesters.filter((s) => s.courses.every((c) => approved.has(c.id)));
   const missingPrereqs = (id: string) => prereqsOf(id).filter((p) => !approved.has(p));
-  const irregular = allCourses.filter((c) => approved.has(c.id) && missingPrereqs(c.id).length > 0);
+  const irregular = allCourses.filter((c) => approved.has(c.id) && !isCourseUnlocked(c.id, approved));
 
   const computeArrows = useCallback(() => {
     const container = containerRef.current, content = contentRef.current;
-    if (!container || !content) return;
-    setSvgW(Math.max(content.scrollWidth, 100));
-    setSvgH(Math.max(content.scrollHeight, 100));
+    if (!container || !content || container.clientWidth === 0) return;
+    setSvgW(content.offsetWidth);
+    setSvgH(content.offsetHeight);
     const contentRect = content.getBoundingClientRect();
     const rawArrows: RawArrow[] = [];
     for (const [from, to] of prerequisites) {
@@ -156,92 +150,71 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
       const y2 = Math.round(tRect.top - contentRect.top + tRect.height / 2);
       rawArrows.push({ from, to, x1, y1, midX: Math.round((x1 + x2) / 2), x2, y2 });
     }
-    setArrows(buildProcessedArrows(rawArrows).map((a) => ({ ...a, crossPoints: a.crossPoints ?? [] })));
+    setArrows(buildProcessedArrows(rawArrows));
   }, [prerequisites]);
 
   useEffect(() => {
     computeArrows();
-    const ro = new ResizeObserver(computeArrows);
-    if (containerRef.current) ro.observe(containerRef.current);
-    if (contentRef.current) ro.observe(contentRef.current);
-    return () => ro.disconnect();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", computeArrows);
+      return () => window.removeEventListener("resize", computeArrows);
+    }
+    const observer = new ResizeObserver(computeArrows);
+    if (containerRef.current) observer.observe(containerRef.current);
+    if (contentRef.current) observer.observe(contentRef.current);
+    return () => observer.disconnect();
   }, [computeArrows]);
 
-  useEffect(() => { computeArrows(); }, [approved, careerId, computeArrows]);
+  useEffect(() => { computeArrows(); }, [approved, computeArrows]);
 
   const highlighted = hovered
     ? new Set([hovered, ...prereqsOf(hovered), ...unlocksOf(hovered)])
     : null;
 
-  const yearGroups = Array.from({ length: TOTAL_YEARS }, (_, i) => i + 1).map((year) => ({
+  const yearGroups = Array.from(new Set(semesters.map((semester) => semester.year))).map((year) => ({
     year,
     semesters: semesters.filter((s) => s.year === year),
   }));
 
   return (
-    <div className="size-full flex flex-col bg-white overflow-hidden font-sans">
+    <main className="flex min-h-dvh flex-col bg-white font-sans lg:h-dvh">
       <SiteHeader
         careerId={careerId}
         view="malla"
-        title="Plan de Estudios por Semestres"
+        title="Plan de estudios"
         note={`${plan.name} · ${semesters.length} semestres`}
-        percent={percent}
       />
 
-      {/* Stats bar */}
-      <div className="flex-none border-b px-4 py-2 flex items-center gap-4 flex-wrap" style={{ borderColor: "#e0e0e0", background: "#fafafa" }}>
-        <div className="flex items-center gap-2 flex-1 min-w-[160px]">
-          <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: INK }}>{percent}%</span>
+      <PlanNotice plan={plan} saveError={saveError} />
+
+      <section aria-label="Resumen del avance" className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-[#dce5e9] bg-slate-50 px-4 py-3 sm:px-6">
+        <div className="flex w-full items-center gap-3 sm:w-auto sm:min-w-44">
+          <span className="text-2xl font-bold tabular-nums leading-none text-[#1a4c5e]">{percent}%</span>
           <div className="flex-1">
-            <div className="text-[10px] text-gray-500 mb-0.5">{approvedCredits} / {totalCredits} créditos</div>
+            <div className="mb-1 text-sm text-slate-600">{approvedCredits} / {totalCredits} créditos</div>
             <Meter value={approvedCredits} total={totalCredits} color={GREEN} />
           </div>
         </div>
-        <div className="h-6 w-px" style={{ background: "#e0e0e0" }} />
-        {[
-          { lbl: "Aprobadas", val: `${approved.size}/${allCourses.length}` },
-          { lbl: "Disponibles", val: `${available.length}` },
-          { lbl: "Semestres completos", val: `${completeSemesters.length}/${semesters.length}` },
-        ].map(({ lbl, val }) => (
-          <div key={lbl} className="text-center">
-            <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: "rgba(26,76,94,0.55)" }}>{lbl}</div>
-            <div className="text-sm font-bold tabular-nums" style={{ color: INK }}>{val}</div>
-          </div>
-        ))}
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-700">
+          <li><strong>{approved.size}/{allCourses.length}</strong> aprobadas</li>
+          <li><strong>{available.length}</strong> disponibles</li>
+          <li><strong>{completeSemesters.length}/{semesters.length}</strong> semestres completos</li>
+        </ul>
         {irregular.length > 0 && (
-          <>
-            <div className="h-6 w-px" style={{ background: "#e0e0e0" }} />
-            <div className="flex items-center gap-1.5 text-[10.5px] font-bold px-2 py-1 rounded" style={{ color: AMBER, background: "#fffbeb", border: `1px solid ${AMBER}40` }}>
-              <svg width="11" height="11" viewBox="0 0 14 14"><path d="M7 1.5 L13 12.5 H1 Z" fill="none" stroke={AMBER} strokeWidth="1.6"/><path d="M7 5.5 V9" stroke={AMBER} strokeWidth="1.6" strokeLinecap="round"/></svg>
-              {irregular.length} con prereq. pendiente
-            </div>
-          </>
+          <p className="rounded bg-amber-50 px-2 py-1 text-sm text-amber-900">
+            {irregular.length} con requisitos pendientes
+          </p>
         )}
-        <div className="ml-auto flex items-center gap-3">
-          {loaded && approved.size === 0 ? (
-            <span className="text-[10.5px] text-gray-400 italic">Haz clic en una materia para marcarla como aprobada</span>
-          ) : confirmReset ? (
-            <span className="flex items-center gap-2 text-[11px]">
-              <span className="text-gray-600">¿Borrar todo?</span>
-              <button onClick={() => { reset(); setConfirmReset(false); }} className="font-bold px-2 py-0.5 rounded border" style={{ borderColor: "#c0392b", color: "#c0392b" }}>Sí</button>
-              <button onClick={() => setConfirmReset(false)} className="text-gray-500 underline">No</button>
-            </span>
-          ) : (
-            <button
-              onClick={() => setConfirmReset(true)}
-              className="text-[10.5px] text-gray-400 underline"
-              disabled={approved.size === 0}
-              style={{ opacity: approved.size === 0 ? 0.4 : 1 }}
-            >
-              Reiniciar avance
-            </button>
-          )}
-        </div>
-      </div>
+        {(approved.size > 0 || Object.keys(grades).length > 0 || Object.keys(legacyGrades).length > 0) && (
+          <div className="sm:ml-auto"><ProgressReset reset={reset} career={plan.shortName} /></div>
+        )}
+      </section>
 
-      <div ref={containerRef} className="flex-1 overflow-auto relative" onScroll={computeArrows}>
-        <div ref={contentRef} className="relative inline-block min-w-full">
-          <svg className="absolute inset-0 pointer-events-none" width={svgW} height={svgH} style={{ overflow: "visible", zIndex: 0 }}>
+      <SemesterList plan={plan} approved={approved} toggle={toggle} setMany={setMany} />
+
+      <div ref={containerRef} className="relative hidden min-h-0 min-w-0 flex-1 overflow-auto lg:block">
+        <div ref={contentRef} className="relative inline-block min-w-full align-top">
+          <svg aria-hidden="true" className="pointer-events-none absolute inset-0" width={svgW} height={svgH} style={{ overflow: "visible", zIndex: 0 }}>
             <defs>
               {[
                 { id: "ah-normal", color: ARROW_COLOR },
@@ -270,7 +243,7 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
               return (
                 <g key={`${careerId}-${from}-${to}`} style={{ transition: "opacity 0.15s" }} opacity={opacity}>
                   <path d={path} fill="none" stroke={stroke} strokeWidth={sw} markerEnd={marker} />
-                  {!isDim && (crossPoints ?? []).map((pt, i) => (
+                  {!isDim && crossPoints.map((pt, i) => (
                     <circle key={i} cx={pt.x} cy={pt.y} r={HOP_R} fill="none" stroke={stroke} strokeWidth={1} />
                   ))}
                 </g>
@@ -280,12 +253,12 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
 
           {/* Year header */}
           <div className="flex sticky top-0 z-20">
-            {yearGroups.map(({ year, semesters: ySems }) => (
+            {yearGroups.map(({ year, semesters: ySems }, index) => (
               <div key={year} className="flex-none flex items-center justify-center"
                 style={{
-                  width: ySems.length * CARD_W + (ySems.length - 1) * COL_GAP + (year < TOTAL_YEARS ? COL_GAP : 0),
-                  background: YEAR_COLORS[year].header, padding: "8px 0",
-                  borderRight: year < TOTAL_YEARS ? "2px solid rgba(255,255,255,0.15)" : "none",
+                  width: ySems.length * CARD_W + (ySems.length - 1) * COL_GAP + (index < yearGroups.length - 1 ? COL_GAP : 0),
+                  background: INK, padding: "8px 0",
+                  borderRight: index < yearGroups.length - 1 ? "2px solid rgba(255,255,255,0.15)" : "none",
                 }}>
                 <span className="text-white font-bold text-sm tracking-wide">Año {year}</span>
               </div>
@@ -299,7 +272,7 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
               const allDone = ids.every((id) => approved.has(id));
               return (
                 <div key={sem.number} className="flex-none flex items-center justify-between px-2"
-                  style={{ width: CARD_W + (si < semesters.length - 1 ? COL_GAP : 0), background: YEAR_COLORS[sem.year].bg }}>
+                  style={{ width: CARD_W + (si < semesters.length - 1 ? COL_GAP : 0), background: yearColor(sem.year) }}>
                   <div className="text-center py-1">
                     <span className="font-bold text-lg" style={{ color: "#1a4c5e" }}>{sem.number}</span>
                   </div>
@@ -320,7 +293,7 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
           <div className="flex relative" style={{ paddingBottom: 32 }}>
             {semesters.map((sem, si) => (
               <div key={sem.number} className="flex-none flex flex-col"
-                style={{ width: CARD_W, marginRight: si < semesters.length - 1 ? COL_GAP : 0, background: YEAR_COLORS[sem.year].bg, paddingTop: 16, paddingBottom: 16 }}>
+                style={{ width: CARD_W, marginRight: si < semesters.length - 1 ? COL_GAP : 0, background: yearColor(sem.year), paddingTop: 16, paddingBottom: 16 }}>
                 <div className="flex flex-col gap-3 items-center">
                   {sem.courses.map((course) => {
                     const isHov = hovered === course.id;
@@ -352,13 +325,18 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
                     ].filter(Boolean).join(" · ");
 
                     return (
-                      <div
+                      <button
                         key={course.id}
+                        type="button"
+                        aria-pressed={isDone}
+                        aria-label={`${course.name}, ${course.credits} créditos${isLocked ? `. ${lockReasons}` : ""}`}
                         ref={(el) => { cardRefs.current[course.id] = el; }}
                         onMouseEnter={() => setHovered(course.id)}
                         onMouseLeave={() => setHovered(null)}
+                        onFocus={() => setHovered(course.id)}
+                        onBlur={() => setHovered(null)}
                         onClick={() => toggle(course.id)}
-                        className="text-center cursor-pointer select-none"
+                        className="min-h-11 cursor-pointer select-none text-center"
                         title={isLocked ? lockReasons : isDone ? "Haz clic para desmarcar" : "Haz clic para marcar como aprobada"}
                         style={{
                           width: CARD_W - 8,
@@ -383,20 +361,20 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
                           <span className="absolute top-1 right-1.5 rounded-full"
                             style={{ width: 6, height: 6, background: "#4a9ebe" }} />
                         )}
-                        <div className="text-[11px] leading-snug pr-1" style={{ color: isLocked && !isDone ? "#888" : "#111", fontWeight: isDone ? 600 : 400 }}>
+                        <span className="block text-xs leading-snug pr-1" style={{ color: isLocked && !isDone ? "#888" : "#111", fontWeight: isDone ? 600 : 400 }}>
                           {course.name}
-                        </div>
-                        <div className="text-[11px] font-bold mt-0.5" style={{ color: isLocked && !isDone ? "#aaa" : "#111" }}>
+                        </span>
+                        <span className="mt-0.5 block text-xs font-bold" style={{ color: isLocked && !isDone ? "#aaa" : "#111" }}>
                           ({course.credits})
-                        </div>
+                        </span>
                         {isLocked && !isDone && (
-                          <div className="text-[9px] mt-0.5" style={{ color: "#bbb" }}>
+                          <span className="mt-0.5 block text-[10px]" style={{ color: "#bbb" }}>
                             {missing.length > 0 && `${missing.length} previa${missing.length > 1 ? "s" : ""}`}
                             {missing.length > 0 && creditsNeeded > 0 && " · "}
                             {creditsNeeded > 0 && `${creditsNeeded} cr.`}
-                          </div>
+                          </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -434,11 +412,11 @@ export default function MallaPage({ careerId }: { careerId: CareerId }) {
               </div>
             ))}
             <span className="text-[10px] text-gray-400 ml-auto italic">
-              Hover = ver conexiones · Clic = marcar aprobada
+              Enfoca una materia para ver conexiones · Selecciónala para marcarla como aprobada
             </span>
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
