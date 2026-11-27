@@ -1,10 +1,10 @@
 import type { CareerConfig } from "@/data/curriculum";
 
-export const electronicaConfig: CareerConfig = {
-  id: "electronica",
+export const electronicaConfig = {
+  id: "electronica" as const,
   name: "Ingeniería Electrónica",
   shortName: "Ing. Electrónica",
-  badge: "Ingeniería Electrónica · Plan 2024",
+  referenceUrl: "https://umg.edu.gt/ingenieria/electronica",
   description:
     "Programa orientado al diseño, análisis y aplicación de sistemas electrónicos, de comunicaciones y control. Combina fundamentos matemáticos sólidos con laboratorios de hardware y proyectos de integración.",
   storagePrefix: "malla-electronica",
@@ -216,4 +216,4 @@ export const electronicaConfig: CareerConfig = {
     elecprofA: 0.75,
     elecprofB: 0.75,
   },
-};
+} satisfies CareerConfig;
