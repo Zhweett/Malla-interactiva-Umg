@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import type { CareerId } from "@/data/curriculum";
+import { useEffect, useState, type AnchorHTMLAttributes } from "react";
+import { DEFAULT_CAREER, isCareerId, type CareerId } from "@/data/curriculum";
 
 // Router mínimo sobre la History API.
 // `import.meta.env.BASE_URL` importa porque Vite puede servir el sitio bajo un
@@ -24,27 +24,22 @@ export function hrefFor(route: string): string {
 /** Lee la ruta actual de la app, descontando el prefijo base. */
 export function currentRoute(): string {
   let path = window.location.pathname;
-  if (BASE && path.startsWith(BASE)) path = path.slice(BASE.length);
+  if (BASE && (path === BASE || path.startsWith(`${BASE}/`))) path = path.slice(BASE.length);
   path = path.replace(/\/+$/, "");
   return path === "" ? "/" : path;
 }
 
 /** Resuelve qué vista y carrera corresponden a una ruta dada. */
 export function parseRoute(route: string): ParsedRoute {
-  if (route === "/") return { page: "landing", careerId: "electronica" };
-  if (route === "/malla" || route === "/electronica" || route === "/electronica/malla") {
-    return { page: "malla", careerId: "electronica" };
+  if (route === "/malla" || route === "/avance") {
+    return { page: route === "/malla" ? "malla" : "avance", careerId: DEFAULT_CAREER };
   }
-  if (route === "/avance" || route === "/electronica/avance") {
-    return { page: "avance", careerId: "electronica" };
+  const [, career, view, ...rest] = route.split("/");
+  if (career && isCareerId(career) && rest.length === 0) {
+    if (!view || view === "malla") return { page: "malla", careerId: career };
+    if (view === "avance") return { page: "avance", careerId: career };
   }
-  if (route === "/sistemas" || route === "/sistemas/malla") {
-    return { page: "malla", careerId: "sistemas" };
-  }
-  if (route === "/sistemas/avance") {
-    return { page: "avance", careerId: "sistemas" };
-  }
-  return { page: "malla", careerId: "electronica" };
+  return { page: "landing", careerId: DEFAULT_CAREER };
 }
 
 export function careerRoute(careerId: CareerId, view: "malla" | "avance"): string {
@@ -76,22 +71,19 @@ export function useRoute(): string {
   return route;
 }
 
-interface LinkProps {
+interface LinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> {
   to: string;
-  className?: string;
-  style?: CSSProperties;
-  children: ReactNode;
 }
 
-export function Link({ to, className, style, children }: LinkProps) {
+export function Link({ to, children, onClick, target, ...props }: LinkProps) {
   return (
     <a
+      {...props}
       href={hrefFor(to)}
-      className={className}
-      style={style}
+      target={target}
       onClick={(event) => {
-        // Respeta cmd/ctrl+click, click de rueda y target del navegador.
-        if (event.defaultPrevented || event.button !== 0) return;
+        onClick?.(event);
+        if (event.defaultPrevented || event.button !== 0 || (target && target !== "_self")) return;
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
         navigate(to);
