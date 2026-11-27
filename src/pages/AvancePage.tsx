@@ -1,16 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
 import {
-  allCourses,
-  courseById,
-  creditsMissingFor,
-  creditsOf,
+  getCareerPlan,
   INK,
-  isCourseUnlocked,
-  prereqsOf,
-  semesters,
-  TOTAL_CREDITS,
   YEAR_COLORS,
+  type CareerId,
 } from "@/data/curriculum";
 import { useProgress, PASSING, MAX_GRADE, MAX_ATTEMPTS } from "@/lib/progress";
 
@@ -127,24 +121,40 @@ function AttemptInput({
   );
 }
 
-export default function AvancePage() {
-  const { approved, grades, loaded, toggle, setMany, setAttempt, reset } = useProgress();
+export default function AvancePage({ careerId }: { careerId: CareerId }) {
+  const plan = getCareerPlan(careerId);
+  const {
+    allCourses,
+    courseById,
+    creditsMissingFor,
+    creditsOf,
+    englishIds,
+    isCourseUnlocked,
+    prereqsOf,
+    semesters,
+    totalCredits,
+  } = plan;
+
+  const { approved, grades, loaded, toggle, setMany, setAttempt, reset } = useProgress(careerId);
   const [confirmReset, setConfirmReset] = useState(false);
-  const ENGLISH_IDS = ["eng1", "eng2", "eng3", "eng4", "eng5"] as const;
   const [excludedEnglish, setExcludedEnglish] = useState<Set<string>>(() => new Set());
 
+  useEffect(() => {
+    setConfirmReset(false);
+    setExcludedEnglish(new Set());
+  }, [careerId]);
+
   const approvedCredits = creditsOf(approved);
-  const percent = Math.round((approvedCredits / TOTAL_CREDITS) * 100);
+  const percent = Math.round((approvedCredits / totalCredits) * 100);
 
   const missingPrereqs = (id: string) => prereqsOf(id).filter((p) => !approved.has(p));
   const available = allCourses.filter((c) => !approved.has(c.id) && isCourseUnlocked(c.id, approved));
   const irregular = allCourses.filter((c) => approved.has(c.id) && missingPrereqs(c.id).length > 0);
   const completeSemesters = semesters.filter((s) => s.courses.every((c) => approved.has(c.id)));
 
-  // Promedio ponderado: usa la ÚLTIMA nota de cada materia × créditos
+  // Promedio ponderado: cada intento (aprobado o reprobado) suma al ponderado con el peso de los créditos.
   const gradedCourses = allCourses.filter((c) => grades[c.id]?.length);
   const gradedForAvg = gradedCourses.filter((c) => !excludedEnglish.has(c.id));
-  // Cada intento (aprobado o reprobado) suma al ponderado con el peso de los créditos de la materia.
   const { totalGradedCredits, weightedSum } = gradedForAvg.reduce(
     (acc, c) => {
       const attempts = grades[c.id];
@@ -167,8 +177,10 @@ export default function AvancePage() {
   return (
     <div className="size-full flex flex-col bg-white overflow-hidden font-sans">
       <SiteHeader
+        careerId={careerId}
+        view="avance"
         title="Seguimiento de Avance"
-        note="Ingeniería Electrónica · guardado en este navegador"
+        note={`${plan.name} · guardado en este navegador`}
         percent={percent}
       />
 
@@ -182,9 +194,9 @@ export default function AvancePage() {
                 <span className="text-5xl font-bold tabular-nums leading-none" style={{ color: INK }}>{percent}</span>
                 <span className="text-xl font-bold ml-1" style={{ color: "rgba(26,76,94,0.55)" }}>% del plan</span>
               </div>
-              <span className="text-[11px] text-gray-500 tabular-nums">{approvedCredits} de {TOTAL_CREDITS} créditos</span>
+              <span className="text-[11px] text-gray-500 tabular-nums">{approvedCredits} de {totalCredits} créditos</span>
             </div>
-            <Meter value={approvedCredits} total={TOTAL_CREDITS} />
+            <Meter value={approvedCredits} total={totalCredits} />
           </section>
 
           {/* Estadísticas */}
@@ -192,7 +204,7 @@ export default function AvancePage() {
             <StatTile label="Materias aprobadas" value={`${approved.size}/${allCourses.length}`} hint={`${allCourses.length - approved.size} por cursar`} />
             <StatTile label="Disponibles ahora" value={`${available.length}`} hint="con prerrequisitos cumplidos" />
             <StatTile label="Semestres completos" value={`${completeSemesters.length}/${semesters.length}`} hint="todas sus materias aprobadas" />
-            <StatTile label="Créditos aprobados" value={`${approvedCredits}`} hint={`faltan ${TOTAL_CREDITS - approvedCredits}`} />
+            <StatTile label="Créditos aprobados" value={`${approvedCredits}`} hint={`faltan ${totalCredits - approvedCredits}`} />
             {weightedAvg !== null && (
               <div className="border rounded px-4 py-3 bg-white" style={{ borderColor: "#e0e0e0" }}>
                 <div className="text-[10.5px] uppercase tracking-wider font-bold mb-1" style={{ color: "rgba(26,76,94,0.6)" }}>Promedio ponderado</div>
@@ -204,8 +216,8 @@ export default function AvancePage() {
                 </div>
                 <div className="text-[9.5px] font-bold uppercase tracking-wide mb-1" style={{ color: "rgba(26,76,94,0.45)" }}>Incluir inglés:</div>
                 <div className="flex flex-wrap gap-1">
-                  {ENGLISH_IDS.map((id) => {
-                    const course = allCourses.find((c) => c.id === id);
+                  {englishIds.map((id) => {
+                    const course = courseById.get(id);
                     const included = !excludedEnglish.has(id);
                     const hasGrade = !!grades[id]?.length;
                     return (
@@ -338,7 +350,6 @@ export default function AvancePage() {
                       const attempts = grades[course.id] ?? [];
                       const everPassed = attempts.some((n) => n >= PASSING);
                       const lastFailed = attempts.length > 0 && !everPassed;
-                      // Always show at least 1 slot when course is marked or has attempts
                       const canAddAttempt = attempts.length < MAX_ATTEMPTS && (attempts.length === 0 || lastFailed);
                       const showSlots = isDone || attempts.length > 0;
                       const visibleSlots = showSlots

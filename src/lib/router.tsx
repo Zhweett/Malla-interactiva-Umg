@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { CareerId } from "@/data/curriculum";
 
-// Router mínimo sobre la History API: sólo hay dos rutas y añadir una
-// dependencia completa de routing no se justifica.
+// Router mínimo sobre la History API.
 // `import.meta.env.BASE_URL` importa porque Vite puede servir el sitio bajo un
 // prefijo (por ejemplo en la vista previa de Figma Make).
 
@@ -9,7 +9,14 @@ const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
 
 const listeners = new Set<() => void>();
 
-/** Convierte una ruta de la app ("/avance") en una URL real del navegador. */
+export type PageView = "landing" | "malla" | "avance";
+
+export interface ParsedRoute {
+  page: PageView;
+  careerId: CareerId;
+}
+
+/** Convierte una ruta de la app ("/sistemas/malla") en una URL real del navegador. */
 export function hrefFor(route: string): string {
   return `${BASE}${route}` || "/";
 }
@@ -20,6 +27,28 @@ export function currentRoute(): string {
   if (BASE && path.startsWith(BASE)) path = path.slice(BASE.length);
   path = path.replace(/\/+$/, "");
   return path === "" ? "/" : path;
+}
+
+/** Resuelve qué vista y carrera corresponden a una ruta dada. */
+export function parseRoute(route: string): ParsedRoute {
+  if (route === "/") return { page: "landing", careerId: "electronica" };
+  if (route === "/malla" || route === "/electronica" || route === "/electronica/malla") {
+    return { page: "malla", careerId: "electronica" };
+  }
+  if (route === "/avance" || route === "/electronica/avance") {
+    return { page: "avance", careerId: "electronica" };
+  }
+  if (route === "/sistemas" || route === "/sistemas/malla") {
+    return { page: "malla", careerId: "sistemas" };
+  }
+  if (route === "/sistemas/avance") {
+    return { page: "avance", careerId: "sistemas" };
+  }
+  return { page: "malla", careerId: "electronica" };
+}
+
+export function careerRoute(careerId: CareerId, view: "malla" | "avance"): string {
+  return `/${careerId}/${view}`;
 }
 
 export function navigate(route: string) {

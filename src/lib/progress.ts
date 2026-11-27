@@ -1,22 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
-import { courseById } from "@/data/curriculum";
+import { getCareerPlan, type CareerId, type Course } from "@/data/curriculum";
 
-const STORAGE_KEY = "malla-electronica:aprobadas:v1";
-const GRADES_KEY  = "malla-electronica:notas:v2"; // v2: array of attempts
-
-export const PASSING   = 300;
+export const PASSING = 300;
 export const MAX_GRADE = 500;
 export const MAX_ATTEMPTS = 4;
 
 // grades: Record<courseId, number[]> — ordered list of attempts (max 4)
 interface ProgressData {
+  careerId: CareerId;
   approved: Set<string>;
   grades: Record<string, number[]>;
 }
 
-function readStored(): Set<string> {
+const storageKeys = (prefix: string) => ({
+  approvedKey: `${prefix}:aprobadas:v1`,
+  gradesKey: `${prefix}:notas:v2`,
+});
+
+function readStored(approvedKey: string, courseById: Map<string, Course>): Set<string> {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(approvedKey);
     if (!raw) return new Set();
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return new Set();
@@ -26,9 +29,9 @@ function readStored(): Set<string> {
   }
 }
 
-function readGrades(): Record<string, number[]> {
+function readGrades(gradesKey: string, courseById: Map<string, Course>): Record<string, number[]> {
   try {
-    const raw = window.localStorage.getItem(GRADES_KEY);
+    const raw = window.localStorage.getItem(gradesKey);
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
@@ -49,33 +52,48 @@ function isApproved(attempts: number[]): boolean {
   return attempts.some((n) => n >= PASSING);
 }
 
-export function useProgress() {
-  const [data, setData] = useState<ProgressData>(() => ({ approved: new Set(), grades: {} }));
-  const [loaded, setLoaded] = useState(false);
+export function useProgress(careerId: CareerId) {
+  const plan = getCareerPlan(careerId);
+  const { approvedKey, gradesKey } = storageKeys(plan.storagePrefix);
+
+  const [data, setData] = useState<ProgressData>(() => ({
+    careerId,
+    approved: new Set(),
+    grades: {},
+  }));
+  const [loadedCareer, setLoadedCareer] = useState<CareerId | null>(null);
 
   useEffect(() => {
-    setData({ approved: readStored(), grades: readGrades() });
-    setLoaded(true);
-  }, []);
+    const activePlan = getCareerPlan(careerId);
+    const keys = storageKeys(activePlan.storagePrefix);
+    setData({
+      careerId,
+      approved: readStored(keys.approvedKey, activePlan.courseById),
+      grades: readGrades(keys.gradesKey, activePlan.courseById),
+    });
+    setLoadedCareer(careerId);
+  }, [careerId]);
 
   useEffect(() => {
-    if (!loaded) return;
-    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...data.approved])); } catch { /* noop */ }
-    try { window.localStorage.setItem(GRADES_KEY, JSON.stringify(data.grades)); } catch { /* noop */ }
-  }, [data, loaded]);
+    // Evita sobrescribir el almacenamiento de la nueva carrera antes de hidratarla.
+    if (loadedCareer !== careerId || data.careerId !== careerId) return;
+    try { window.localStorage.setItem(approvedKey, JSON.stringify([...data.approved])); } catch { /* noop */ }
+    try { window.localStorage.setItem(gradesKey, JSON.stringify(data.grades)); } catch { /* noop */ }
+  }, [data, loadedCareer, careerId, approvedKey, gradesKey]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY || e.key === GRADES_KEY) {
+      if (e.key === approvedKey || e.key === gradesKey) {
         setData((prev) => ({
-          approved: e.key === STORAGE_KEY ? readStored() : prev.approved,
-          grades: e.key === GRADES_KEY ? readGrades() : prev.grades,
+          careerId,
+          approved: e.key === approvedKey ? readStored(approvedKey, plan.courseById) : prev.approved,
+          grades: e.key === gradesKey ? readGrades(gradesKey, plan.courseById) : prev.grades,
         }));
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [careerId, approvedKey, gradesKey, plan]);
 
   const toggle = useCallback((id: string) => {
     setData((prev) => {
@@ -101,11 +119,9 @@ export function useProgress() {
       const current = grades[id] ? [...grades[id]] : [];
 
       if (nota === null) {
-        // Elimina desde index en adelante
         current.splice(index);
       } else {
         current[index] = nota;
-        // Elimina intentos posteriores al editado (por consistencia)
         current.splice(index + 1);
       }
 
@@ -116,13 +132,22 @@ export function useProgress() {
         grades[id] = current;
         if (isApproved(current)) approved.add(id); else approved.delete(id);
       }
-      return { approved, grades };
+      return { ...prev, approved, grades };
     });
   }, []);
 
   const reset = useCallback(() => {
-    setData({ approved: new Set(), grades: {} });
-  }, []);
+    setData({ careerId, approved: new Set(), grades: {} });
+  }, [careerId]);
 
-  return { approved: data.approved, grades: data.grades, loaded, toggle, setMany, setAttempt, reset };
+  const loaded = loadedCareer === careerId;
+  return {
+    approved: data.careerId === careerId ? data.approved : new Set<string>(),
+    grades: data.careerId === careerId ? data.grades : {},
+    loaded,
+    toggle,
+    setMany,
+    setAttempt,
+    reset,
+  };
 }

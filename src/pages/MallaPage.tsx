@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
 import {
-  allCourses,
-  courseById,
-  creditsOf,
-  creditsMissingFor,
+  getCareerPlan,
   INK,
-  isCourseUnlocked,
-  prereqsOf,
-  prerequisites,
-  semesters,
-  TOTAL_CREDITS,
   TOTAL_YEARS,
-  unlocksOf,
   YEAR_COLORS,
+  type CareerId,
 } from "@/data/curriculum";
 import { useProgress } from "@/lib/progress";
 
@@ -109,7 +101,21 @@ function Meter({ value, total, color = INK }: { value: number; total: number; co
   );
 }
 
-export default function MallaPage() {
+export default function MallaPage({ careerId }: { careerId: CareerId }) {
+  const plan = getCareerPlan(careerId);
+  const {
+    allCourses,
+    courseById,
+    creditsMissingFor,
+    creditsOf,
+    isCourseUnlocked,
+    prereqsOf,
+    prerequisites,
+    semesters,
+    totalCredits,
+    unlocksOf,
+  } = plan;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -118,10 +124,16 @@ export default function MallaPage() {
   const [svgH, setSvgH] = useState(2000);
   const [hovered, setHovered] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
-  const { approved, loaded, toggle, setMany, reset } = useProgress();
+  const { approved, loaded, toggle, setMany, reset } = useProgress(careerId);
+
+  useEffect(() => {
+    setHovered(null);
+    setConfirmReset(false);
+    cardRefs.current = {};
+  }, [careerId]);
 
   const approvedCredits = creditsOf(approved);
-  const percent = Math.round((approvedCredits / TOTAL_CREDITS) * 100);
+  const percent = Math.round((approvedCredits / totalCredits) * 100);
   const available = allCourses.filter((c) => !approved.has(c.id) && isCourseUnlocked(c.id, approved));
   const completeSemesters = semesters.filter((s) => s.courses.every((c) => approved.has(c.id)));
   const missingPrereqs = (id: string) => prereqsOf(id).filter((p) => !approved.has(p));
@@ -144,8 +156,8 @@ export default function MallaPage() {
       const y2 = Math.round(tRect.top - contentRect.top + tRect.height / 2);
       rawArrows.push({ from, to, x1, y1, midX: Math.round((x1 + x2) / 2), x2, y2 });
     }
-    setArrows(buildProcessedArrows(rawArrows).map(a => ({ ...a, crossPoints: a.crossPoints ?? [] })));
-  }, []);
+    setArrows(buildProcessedArrows(rawArrows).map((a) => ({ ...a, crossPoints: a.crossPoints ?? [] })));
+  }, [prerequisites]);
 
   useEffect(() => {
     computeArrows();
@@ -155,7 +167,7 @@ export default function MallaPage() {
     return () => ro.disconnect();
   }, [computeArrows]);
 
-  useEffect(() => { computeArrows(); }, [approved, computeArrows]);
+  useEffect(() => { computeArrows(); }, [approved, careerId, computeArrows]);
 
   const highlighted = hovered
     ? new Set([hovered, ...prereqsOf(hovered), ...unlocksOf(hovered)])
@@ -169,8 +181,10 @@ export default function MallaPage() {
   return (
     <div className="size-full flex flex-col bg-white overflow-hidden font-sans">
       <SiteHeader
+        careerId={careerId}
+        view="malla"
         title="Plan de Estudios por Semestres"
-        note="Ingeniería Electrónica · 10 semestres"
+        note={`${plan.name} · ${semesters.length} semestres`}
         percent={percent}
       />
 
@@ -179,8 +193,8 @@ export default function MallaPage() {
         <div className="flex items-center gap-2 flex-1 min-w-[160px]">
           <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: INK }}>{percent}%</span>
           <div className="flex-1">
-            <div className="text-[10px] text-gray-500 mb-0.5">{approvedCredits} / {TOTAL_CREDITS} créditos</div>
-            <Meter value={approvedCredits} total={TOTAL_CREDITS} color={GREEN} />
+            <div className="text-[10px] text-gray-500 mb-0.5">{approvedCredits} / {totalCredits} créditos</div>
+            <Meter value={approvedCredits} total={totalCredits} color={GREEN} />
           </div>
         </div>
         <div className="h-6 w-px" style={{ background: "#e0e0e0" }} />
@@ -254,7 +268,7 @@ export default function MallaPage() {
               else if (isUnlock) { stroke = GREEN; opacity = 0.9; sw = 2.5; marker = "url(#ah-unlock)"; }
               else if (highlighted) { opacity = 0.08; }
               return (
-                <g key={`${from}-${to}`} style={{ transition: "opacity 0.15s" }} opacity={opacity}>
+                <g key={`${careerId}-${from}-${to}`} style={{ transition: "opacity 0.15s" }} opacity={opacity}>
                   <path d={path} fill="none" stroke={stroke} strokeWidth={sw} markerEnd={marker} />
                   {!isDim && (crossPoints ?? []).map((pt, i) => (
                     <circle key={i} cx={pt.x} cy={pt.y} r={HOP_R} fill="none" stroke={stroke} strokeWidth={1} />

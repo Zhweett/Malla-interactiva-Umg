@@ -1,14 +1,14 @@
 import AvancePage from "@/pages/AvancePage";
 import MallaPage from "@/pages/MallaPage";
 import LandingPage from "@/pages/LandingPage";
-import { useRoute } from "@/lib/router";
+import { parseRoute, useRoute } from "@/lib/router";
 
 export default function App() {
   const route = useRoute();
+  const { page, careerId } = parseRoute(route);
 
-  if (route === "/avance") return <AvancePage />;
-  if (route === "/malla") return <MallaPage />;
+  if (page === "avance") return <AvancePage careerId={careerId} />;
+  if (page === "malla") return <MallaPage careerId={careerId} />;
 
-  // Ruta raíz: landing page. Cualquier otra ruta desconocida cae en la malla.
-  return route === "/" ? <LandingPage /> : <MallaPage />;
+  return <LandingPage />;
 }
