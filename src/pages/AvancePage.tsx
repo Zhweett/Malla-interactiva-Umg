@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
+import PlanNotice from "@/components/PlanNotice";
+import ProgressReset from "@/components/ProgressReset";
 import {
   getCareerPlan,
   INK,
-  YEAR_COLORS,
+  yearColor,
   type CareerId,
 } from "@/data/curriculum";
 import { useProgress, PASSING, MAX_GRADE, MAX_ATTEMPTS } from "@/lib/progress";
@@ -11,9 +13,6 @@ import { useProgress, PASSING, MAX_GRADE, MAX_ATTEMPTS } from "@/lib/progress";
 const GREEN  = "#1a7a3a";
 const RED    = "#c0392b";
 const AMBER  = "#d97706";
-const PURPLE = "#6b1f82";
-
-const ATTEMPT_LABELS = ["1ª", "2ª Final", "3ª Final", "4ª Final"];
 
 function Meter({ value, total, color = INK }: { value: number; total: number; color?: string }) {
   const pct = total === 0 ? 0 : Math.round((value / total) * 100);
@@ -27,9 +26,9 @@ function Meter({ value, total, color = INK }: { value: number; total: number; co
 function StatTile({ label, value, hint, accent }: { label: string; value: string; hint: string; accent?: string }) {
   return (
     <div className="border rounded px-4 py-3 bg-white" style={{ borderColor: "#e0e0e0" }}>
-      <div className="text-[10.5px] uppercase tracking-wider font-bold" style={{ color: "rgba(26,76,94,0.6)" }}>{label}</div>
+      <div className="text-sm font-semibold" style={{ color: "rgba(26,76,94,0.8)" }}>{label}</div>
       <div className="text-2xl font-bold tabular-nums leading-tight mt-1" style={{ color: accent ?? INK }}>{value}</div>
-      <div className="text-[11px] text-gray-500 mt-0.5">{hint}</div>
+      <div className="mt-0.5 text-sm text-slate-600">{hint}</div>
     </div>
   );
 }
@@ -43,21 +42,24 @@ function CheckIcon({ color }: { color: string }) {
 }
 
 function AttemptInput({
-  courseId, index, value, onSave, disabled,
+  courseId, courseName, index, value, onSave,
 }: {
-  courseId: string; index: number; value: number | undefined;
+  courseId: string; courseName: string; index: number; value: number | undefined;
   onSave: (id: string, index: number, nota: number | null) => void;
-  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value !== undefined ? String(value) : "");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const label = `Intento ${index + 1} de ${courseName}`;
 
   const commit = () => {
-    const n = parseFloat(val.replace(",", "."));
-    if (val.trim() === "") { onSave(courseId, index, null); setEditing(false); return; }
-    if (!isNaN(n) && n >= 0 && n <= MAX_GRADE) { onSave(courseId, index, n); setEditing(false); }
-    else { setVal(value !== undefined ? String(value) : ""); setEditing(false); }
+    const text = val.trim().replace(",", ".");
+    if (text === "") {
+      setEditing(false);
+      return;
+    }
+    const grade = Number(text);
+    if (Number.isFinite(grade) && grade >= 0 && grade <= MAX_GRADE) onSave(courseId, index, grade);
+    setEditing(false);
   };
 
   const passed = value !== undefined && value >= PASSING;
@@ -66,55 +68,50 @@ function AttemptInput({
   if (editing) {
     return (
       <input
-        ref={inputRef}
-        type="number" min={0} max={MAX_GRADE} step={1}
+        type="number" min={0} max={MAX_GRADE} step="any" inputMode="decimal"
+        aria-label={label}
         value={val}
         autoFocus
         onChange={(e) => setVal(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
-        className="w-16 text-center text-[11px] border rounded px-1 py-0.5 font-bold tabular-nums outline-none"
+        className="min-h-11 w-24 rounded border px-2 text-center text-base font-bold tabular-nums"
         style={{ borderColor: INK, color: INK }}
-        onClick={(e) => e.stopPropagation()}
       />
     );
   }
 
   return (
-    <div className="flex items-center gap-1">
-      <span className="text-[9px] font-bold" style={{ color: "rgba(26,76,94,0.45)", minWidth: 36 }}>
-        {ATTEMPT_LABELS[index]}
-      </span>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm font-semibold text-slate-600">Intento {index + 1}</span>
       <button
-        disabled={disabled}
+        type="button"
+        aria-label={`${value === undefined ? "Agregar" : "Editar"} nota. ${label}`}
         onClick={(e) => {
           e.stopPropagation();
           setVal(value !== undefined ? String(value) : "");
           setEditing(true);
         }}
-        className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded border transition-all"
+        className="min-h-11 rounded border px-3 text-sm font-bold tabular-nums"
         style={{
           borderColor: passed ? GREEN + "80" : failed ? RED + "80" : "#e0e0e0",
-          color: passed ? GREEN : failed ? RED : "#bbb",
+          color: passed ? GREEN : failed ? RED : INK,
           background: passed ? "#f0fff4" : failed ? "#fff5f5" : "#f9f9f9",
-          cursor: disabled ? "default" : "pointer",
-          opacity: disabled ? 0.4 : 1,
         }}
-        title={disabled ? "Ingresa la nota anterior primero" : `Ingresar ${ATTEMPT_LABELS[index]} (0–${MAX_GRADE})`}
       >
-        {value !== undefined ? value : "—"}
+        {value !== undefined ? value : "Agregar nota"}
       </button>
       {value !== undefined && (
         <>
-          <span className="text-[9px] font-bold px-1 py-0.5 rounded"
+          <span className="rounded px-2 py-0.5 text-xs font-bold"
             style={{ background: passed ? "#e6f7ec" : "#fde8e8", color: passed ? GREEN : RED }}>
-            {passed ? "APR" : "REP"}
+            {passed ? "Aprobada" : "Reprobada"}
           </span>
           <button
             onClick={(e) => { e.stopPropagation(); onSave(courseId, index, null); }}
-            className="text-[10px] text-gray-300 hover:text-gray-500 leading-none"
-            title="Borrar esta nota"
-          >✕</button>
+            className="min-h-11 rounded px-2 text-sm text-red-800 underline"
+            aria-label={`Borrar este intento y los siguientes. ${label}`}
+          >Borrar</button>
         </>
       )}
     </div>
@@ -135,17 +132,11 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
     totalCredits,
   } = plan;
 
-  const { approved, grades, loaded, toggle, setMany, setAttempt, reset } = useProgress(careerId);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const { approved, grades, legacyGrades, saveError, toggle, setMany, setAttempt, reset } = useProgress(careerId);
   const [excludedEnglish, setExcludedEnglish] = useState<Set<string>>(() => new Set());
 
-  useEffect(() => {
-    setConfirmReset(false);
-    setExcludedEnglish(new Set());
-  }, [careerId]);
-
   const approvedCredits = creditsOf(approved);
-  const percent = Math.round((approvedCredits / totalCredits) * 100);
+  const percent = totalCredits ? Math.round((approvedCredits / totalCredits) * 100) : 0;
 
   const missingPrereqs = (id: string) => prereqsOf(id).filter((p) => !approved.has(p));
   const available = allCourses.filter((c) => !approved.has(c.id) && isCourseUnlocked(c.id, approved));
@@ -172,20 +163,20 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
     return attempts?.length && !attempts.some((n) => n >= PASSING);
   });
   const passedGraded = gradedCourses.filter((c) => grades[c.id].some((n) => n >= PASSING));
-  const hasData = approved.size > 0 || Object.keys(grades).length > 0;
+  const hasLegacy = Object.keys(legacyGrades).length > 0;
+  const hasData = approved.size > 0 || Object.keys(grades).length > 0 || hasLegacy;
 
   return (
-    <div className="size-full flex flex-col bg-white overflow-hidden font-sans">
+    <main className="min-h-dvh bg-white font-sans">
       <SiteHeader
         careerId={careerId}
         view="avance"
-        title="Seguimiento de Avance"
-        note={`${plan.name} · guardado en este navegador`}
-        percent={percent}
+        title="Seguimiento de avance"
+        note={`${plan.name} · avance en este navegador`}
       />
 
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto px-6 py-6">
+      <PlanNotice plan={plan} saveError={saveError} />
+      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6">
 
           {/* Progreso principal */}
           <section className="mb-6">
@@ -194,27 +185,27 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
                 <span className="text-5xl font-bold tabular-nums leading-none" style={{ color: INK }}>{percent}</span>
                 <span className="text-xl font-bold ml-1" style={{ color: "rgba(26,76,94,0.55)" }}>% del plan</span>
               </div>
-              <span className="text-[11px] text-gray-500 tabular-nums">{approvedCredits} de {totalCredits} créditos</span>
+              <span className="text-sm text-slate-600 tabular-nums">{approvedCredits} de {totalCredits} créditos</span>
             </div>
             <Meter value={approvedCredits} total={totalCredits} />
           </section>
 
           {/* Estadísticas */}
-          <section className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))" }}>
+          <section className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             <StatTile label="Materias aprobadas" value={`${approved.size}/${allCourses.length}`} hint={`${allCourses.length - approved.size} por cursar`} />
             <StatTile label="Disponibles ahora" value={`${available.length}`} hint="con prerrequisitos cumplidos" />
             <StatTile label="Semestres completos" value={`${completeSemesters.length}/${semesters.length}`} hint="todas sus materias aprobadas" />
             <StatTile label="Créditos aprobados" value={`${approvedCredits}`} hint={`faltan ${totalCredits - approvedCredits}`} />
-            {weightedAvg !== null && (
-              <div className="border rounded px-4 py-3 bg-white" style={{ borderColor: "#e0e0e0" }}>
-                <div className="text-[10.5px] uppercase tracking-wider font-bold mb-1" style={{ color: "rgba(26,76,94,0.6)" }}>Promedio ponderado</div>
-                <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color: weightedAvg >= PASSING ? GREEN : RED }}>
-                  {Math.round(weightedAvg)}
+            {gradedCourses.length > 0 && (
+              <div className="col-span-full rounded border bg-white px-4 py-3 sm:col-span-2" style={{ borderColor: "#e0e0e0" }}>
+                <div className="mb-1 text-sm font-semibold" style={{ color: "rgba(26,76,94,0.6)" }}>Promedio ponderado</div>
+                <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color: weightedAvg === null ? INK : weightedAvg >= PASSING ? GREEN : RED }}>
+                  {weightedAvg === null ? "—" : Math.round(weightedAvg)}
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5 mb-2">
                   {passedGraded.length} aprobadas · {failedCourses.length} reprobadas
                 </div>
-                <div className="text-[9.5px] font-bold uppercase tracking-wide mb-1" style={{ color: "rgba(26,76,94,0.45)" }}>Incluir inglés:</div>
+                {englishIds.length > 0 && <div className="mb-1 text-sm font-semibold text-slate-700">Incluir inglés en el promedio</div>}
                 <div className="flex flex-wrap gap-1">
                   {englishIds.map((id) => {
                     const course = courseById.get(id);
@@ -228,7 +219,8 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
                           if (next.has(id)) next.delete(id); else next.add(id);
                           return next;
                         })}
-                        className="text-[9.5px] font-bold px-1.5 py-0.5 rounded border transition-all"
+                        aria-pressed={included}
+                        className="min-h-11 rounded border px-2 text-sm font-bold"
                         style={{
                           borderColor: included ? "#4a9ebe" : "#ccc",
                           color: included ? "#4a9ebe" : "#aaa",
@@ -254,7 +246,7 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
                 <path d="M7 5.5 V9" stroke={RED} strokeWidth="1.6" strokeLinecap="round"/>
               </svg>
               <div>
-                <div className="text-[11.5px] font-bold mb-1" style={{ color: RED }}>
+                <div className="mb-1 text-sm font-bold" style={{ color: RED }}>
                   Materias reprobadas ({failedCourses.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -262,7 +254,7 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
                     const attempts = grades[c.id];
                     const last = attempts[attempts.length - 1];
                     return (
-                      <span key={c.id} className="text-[11px] px-2 py-0.5 rounded font-bold"
+                      <span key={c.id} className="rounded px-2 py-0.5 text-sm font-semibold"
                         style={{ background: "#fde8e8", color: RED }}>
                         {c.name} — {last}pts ({attempts.length}/{MAX_ATTEMPTS} intentos)
                       </span>
@@ -281,8 +273,8 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
                 <path d="M7 5.5 V9" stroke={AMBER} strokeWidth="1.6" strokeLinecap="round"/>
               </svg>
               <div>
-                <div className="text-[11.5px] font-bold" style={{ color: AMBER }}>Prerrequisitos sin aprobar</div>
-                <ul className="text-[11.5px] text-gray-600 mt-1 space-y-0.5">
+                <div className="text-sm font-bold" style={{ color: AMBER }}>Prerrequisitos sin aprobar</div>
+                <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
                   {irregular.map((c) => (
                     <li key={c.id}><span className="font-bold">{c.name}</span>: falta {missingPrereqs(c.id).map((p) => courseById.get(p)?.name ?? p).join(", ")}</li>
                   ))}
@@ -291,31 +283,21 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
             </section>
           )}
 
-          {/* Disponibles / estado vacío */}
-          {loaded && approved.size === 0 ? (
-            <section className="border rounded px-5 py-6 mb-6 text-center" style={{ borderColor: "#e0e0e0", background: YEAR_COLORS[1].bg }}>
-              <div className="font-bold text-sm mb-1" style={{ color: INK }}>Aún no has marcado materias</div>
-              <p className="text-[12px] text-gray-600 max-w-md mx-auto">
-                Marca las materias que ya cursaste e ingresa tu nota (0–{MAX_GRADE}). Se guarda sólo en este navegador.
-              </p>
-            </section>
-          ) : available.length > 0 && (
-            <section className="mb-6">
-              <h2 className="text-[11px] uppercase tracking-wider font-bold mb-2" style={{ color: PURPLE }}>Puedes inscribir ahora</h2>
-              <div className="flex flex-wrap gap-2">
-                {available.map((c) => (
-                  <button key={c.id} onClick={() => toggle(c.id)}
-                    className="text-[11.5px] px-2.5 py-1.5 rounded border text-left"
-                    style={{ borderColor: PURPLE, color: "#111", background: "#f9f4fd" }}>
-                    {c.name} <span className="font-bold">({c.credits})</span>
-                  </button>
-                ))}
-              </div>
-            </section>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-slate-200 py-2 text-sm text-slate-700">
+            <p>
+              Notas de 0 a {MAX_GRADE} · Aprobación desde {PASSING} puntos.{" "}
+              <a href="https://umg.edu.gt/pdf/normas/Normas_Academicas_UMG.pdf" target="_blank" rel="noreferrer" className="font-semibold text-[#1a4c5e] underline">Normas UMG</a>
+            </p>
+            {hasData && <ProgressReset reset={reset} career={plan.shortName} />}
+          </div>
+          {hasLegacy && (
+            <p className="mb-4 rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+              Las notas guardadas con la escala anterior (0–500) se muestran en sus materias como historial. El promedio se calcula con las notas de 0 a 100.
+            </p>
           )}
 
           {/* Semestres con notas */}
-          <section className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))" }}>
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {semesters.map((sem) => {
               const ids = sem.courses.map((c) => c.id);
               const done = ids.filter((id) => approved.has(id));
@@ -324,15 +306,15 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
 
               return (
                 <div key={sem.number} className="border rounded overflow-hidden" style={{ borderColor: "#e0e0e0" }}>
-                  <div className="px-3 py-2" style={{ background: YEAR_COLORS[sem.year].bg }}>
+                  <div className="px-3 py-2" style={{ background: yearColor(sem.year) }}>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-lg leading-none tabular-nums" style={{ color: INK }}>{sem.number}</span>
                       <span className="text-[10.5px] font-bold uppercase tracking-wider" style={{ color: "rgba(26,76,94,0.65)" }}>Año {sem.year}</span>
                       {allDone && <CheckIcon color={GREEN} />}
                       <button onClick={() => setMany(ids, !allDone)}
-                        className="ml-auto text-[10px] font-bold uppercase tracking-wide underline"
+                        className="ml-auto min-h-11 rounded px-2 text-sm font-bold underline"
                         style={{ color: "rgba(26,76,94,0.7)" }}>
-                        {allDone ? "Limpiar" : "Todo"}
+                        {allDone ? "Desmarcar todas" : "Marcar todas"}
                       </button>
                     </div>
                     <div className="flex items-center gap-2 mt-1.5">
@@ -351,10 +333,7 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
                       const everPassed = attempts.some((n) => n >= PASSING);
                       const lastFailed = attempts.length > 0 && !everPassed;
                       const canAddAttempt = attempts.length < MAX_ATTEMPTS && (attempts.length === 0 || lastFailed);
-                      const showSlots = isDone || attempts.length > 0;
-                      const visibleSlots = showSlots
-                        ? Math.min(attempts.length + (canAddAttempt ? 1 : 0), MAX_ATTEMPTS)
-                        : 0;
+                      const visibleSlots = attempts.length + (canAddAttempt ? 1 : 0);
 
                       return (
                         <li key={course.id} style={{ borderColor: "#f0f0f0" }}>
@@ -365,68 +344,62 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
                               transition: "background 0.15s",
                             }}
                           >
-                            {/* Fila superior: checkbox + nombre */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-between gap-x-2">
                               <button
+                                type="button"
                                 onClick={() => toggle(course.id)}
                                 aria-pressed={isDone}
-                                className="flex-none flex items-center justify-center rounded-sm"
-                                style={{
-                                  width: 14, height: 14,
-                                  border: `1.5px solid ${everPassed ? GREEN : lastFailed ? RED : "#bbb"}`,
-                                  background: everPassed ? GREEN : lastFailed ? RED : "#fff",
-                                }}
-                                title={isDone ? "Desmarcar" : "Marcar como cursada"}
+                                className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded text-left"
+                                title={isDone ? "Desmarcar aprobación" : "Marcar como aprobada"}
                               >
-                                {(isDone || lastFailed) && <CheckIcon color="#fff" />}
-                              </button>
-
-                              <span className="flex-1 min-w-0">
-                                <span className="text-[11.5px] leading-snug truncate block"
-                                  style={{ color: isLocked && attempts.length === 0 ? "#888" : "#111", fontWeight: isDone ? 600 : 400 }}>
-                                  {course.name} <span className="font-bold">({course.credits})</span>
+                                <span className={`flex size-5 shrink-0 items-center justify-center rounded border ${isDone ? "border-green-800 bg-green-800" : "border-slate-500 bg-white"}`} aria-hidden="true">
+                                  {isDone && <CheckIcon color="#fff" />}
                                 </span>
-                                {isLocked && attempts.length === 0 && (
-                                  <span className="text-[10px]" style={{ color: "#aaa" }}>
-                                    {missing.length > 0 && `${missing.length} previa${missing.length > 1 ? "s" : ""}`}
-                                    {missing.length > 0 && creditsNeeded > 0 && " · "}
-                                    {creditsNeeded > 0 && `${creditsNeeded} cr.`}
-                                  </span>
-                                )}
-                              </span>
-
-                              {/* Estado global */}
+                                <span className="min-w-0 break-words text-sm leading-snug text-slate-800">
+                                  {course.name} <span className="whitespace-nowrap font-semibold">({course.credits} cr.)</span>
+                                </span>
+                              </button>
                               {attempts.length > 0 && (
-                                <span className="flex-none text-[9px] font-bold px-1.5 py-0.5 rounded"
+                                <span className="rounded px-2 py-0.5 text-xs font-bold"
                                   style={{ background: everPassed ? "#e6f7ec" : "#fde8e8", color: everPassed ? GREEN : RED }}>
-                                  {everPassed ? "APR" : `REP ×${attempts.length}`}
+                                  {everPassed ? "Aprobada" : "Reprobada"}
                                 </span>
                               )}
                             </div>
+                            {isLocked && (
+                              <p className="ml-7 text-xs text-slate-600">
+                                {missing.length > 0 && `${missing.length} prerrequisito${missing.length === 1 ? "" : "s"} pendiente${missing.length === 1 ? "" : "s"}`}
+                                {missing.length > 0 && creditsNeeded > 0 && " · "}
+                                {creditsNeeded > 0 && `Faltan ${creditsNeeded} créditos`}
+                              </p>
+                            )}
+                            {legacyGrades[course.id]?.length > 0 && (
+                              <p className="ml-7 mt-1 text-xs text-slate-600">
+                                Historial (0–500): {legacyGrades[course.id].join(", ")}
+                              </p>
+                            )}
 
                             {/* Filas de intentos */}
-                            {visibleSlots > 0 && (
-                              <div className="mt-2 flex flex-col gap-1 pl-5">
+                            <details open={attempts.length > 0} className="ml-7 text-sm text-slate-700">
+                              <summary className="min-h-11 cursor-pointer rounded py-3 font-semibold text-[#1a4c5e]">Notas</summary>
+                              <div className="space-y-1 pb-2">
                                 {Array.from({ length: visibleSlots }, (_, i) => (
                                   <AttemptInput
                                     key={i}
                                     courseId={course.id}
+                                    courseName={course.name}
                                     index={i}
                                     value={attempts[i]}
                                     onSave={setAttempt}
-                                    disabled={i > 0 && attempts[i - 1] === undefined}
                                   />
                                 ))}
-                                {everPassed && attempts.length < MAX_ATTEMPTS && (
-                                  <span className="text-[9px] text-gray-400 italic pl-9">Materia aprobada</span>
-                                )}
                                 {!everPassed && attempts.length >= MAX_ATTEMPTS && (
-                                  <span className="text-[9px] font-bold pl-9" style={{ color: RED }}>
+                                  <span className="text-sm font-semibold" style={{ color: RED }}>
                                     Máximo de intentos alcanzado ({MAX_ATTEMPTS})
                                   </span>
                                 )}
                               </div>
-                            )}
+                            </details>
                           </div>
                         </li>
                       );
@@ -437,46 +410,7 @@ export default function AvancePage({ careerId }: { careerId: CareerId }) {
             })}
           </section>
 
-          {/* Footer */}
-          <footer className="flex items-center gap-4 flex-wrap mt-6 pt-4 border-t" style={{ borderColor: "#e0e0e0" }}>
-            <div className="text-[11px] text-gray-400">
-              Escala 0–{MAX_GRADE} pts · Mínimo aprobatorio: <span className="font-bold" style={{ color: INK }}>{PASSING} pts</span>
-              {weightedAvg !== null && (
-                <span className="ml-3">
-                  Promedio ponderado:{" "}
-                  <span className="font-bold" style={{ color: weightedAvg >= PASSING ? GREEN : RED }}>
-                    {Math.round(weightedAvg)}
-                  </span>
-                </span>
-              )}
-            </div>
-            <div className="ml-auto">
-              {confirmReset ? (
-                <span className="flex items-center gap-2 text-[11.5px]">
-                  <span className="text-gray-600">¿Borrar todo el avance y las notas?</span>
-                  <button onClick={() => { reset(); setConfirmReset(false); }}
-                    className="font-bold px-3 py-1.5 rounded border" style={{ borderColor: RED, color: RED }}>
-                    Sí, borrar todo
-                  </button>
-                  <button onClick={() => setConfirmReset(false)} className="text-gray-500 underline">Cancelar</button>
-                </span>
-              ) : (
-                <button
-                  onClick={() => setConfirmReset(true)}
-                  disabled={!hasData}
-                  className="flex items-center gap-2 text-[12px] font-bold px-4 py-2 rounded border transition-all"
-                  style={{ borderColor: hasData ? RED : "#ddd", color: hasData ? RED : "#ccc", background: "white", opacity: hasData ? 1 : 0.5 }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                  </svg>
-                  Reiniciar avance
-                </button>
-              )}
-            </div>
-          </footer>
-        </div>
       </div>
-    </div>
+    </main>
   );
 }

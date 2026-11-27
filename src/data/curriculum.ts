@@ -1,7 +1,8 @@
 import { electronicaConfig } from "@/data/electronica";
 import { sistemasConfig } from "@/data/sistemas";
 
-export type CareerId = "electronica" | "sistemas";
+const careerConfigs = [electronicaConfig, sistemasConfig];
+export type CareerId = (typeof careerConfigs)[number]["id"];
 
 export interface Course {
   id: string;
@@ -16,10 +17,10 @@ export interface Semester {
 }
 
 export interface CareerConfig {
-  id: CareerId;
+  id: string;
   name: string;
   shortName: string;
-  badge: string;
+  referenceUrl: string;
   description: string;
   storagePrefix: string;
   englishIds: string[];
@@ -29,6 +30,7 @@ export interface CareerConfig {
 }
 
 export interface CareerPlan extends CareerConfig {
+  id: CareerId;
   allCourses: Course[];
   courseById: Map<string, Course>;
   semesterOfCourse: Map<string, number>;
@@ -40,18 +42,11 @@ export interface CareerPlan extends CareerConfig {
   creditsMissingFor: (id: string, approvedIds: Set<string>) => number;
 }
 
-export const YEAR_COLORS: Record<number, { bg: string; header: string }> = {
-  1: { bg: "#fce8e2", header: "#1a4c5e" },
-  2: { bg: "#e2f0e2", header: "#1a4c5e" },
-  3: { bg: "#fce8e2", header: "#1a4c5e" },
-  4: { bg: "#e2f0e2", header: "#1a4c5e" },
-  5: { bg: "#fce8e2", header: "#1a4c5e" },
-};
-
-export const TOTAL_YEARS = 5;
 export const INK = "#1a4c5e";
 
-function buildCareerPlan(config: CareerConfig): CareerPlan {
+export const yearColor = (year: number) => (year % 2 === 0 ? "#e2f0e2" : "#fce8e2");
+
+function buildCareerPlan(config: CareerConfig & { id: CareerId }): CareerPlan {
   const allCourses = config.semesters.flatMap((s) => s.courses);
   const courseById = new Map(allCourses.map((c) => [c.id, c]));
   const semesterOfCourse = new Map(
@@ -59,25 +54,19 @@ function buildCareerPlan(config: CareerConfig): CareerPlan {
   );
   const totalCredits = allCourses.reduce((sum, c) => sum + c.credits, 0);
 
-  const prereqsOf = (id: string): string[] =>
-    config.prerequisites.filter(([, to]) => to === id).map(([from]) => from);
-
-  const unlocksOf = (id: string): string[] =>
-    config.prerequisites.filter(([from]) => from === id).map(([, to]) => to);
+  const requires = new Map<string, string[]>();
+  const unlocks = new Map<string, string[]>();
+  for (const [from, to] of config.prerequisites) {
+    requires.set(to, [...(requires.get(to) ?? []), from]);
+    unlocks.set(from, [...(unlocks.get(from) ?? []), to]);
+  }
+  const prereqsOf = (id: string) => requires.get(id) ?? [];
+  const unlocksOf = (id: string) => unlocks.get(id) ?? [];
 
   const creditsOf = (ids: Iterable<string>): number => {
     let sum = 0;
     for (const id of ids) sum += courseById.get(id)?.credits ?? 0;
     return sum;
-  };
-
-  const isCourseUnlocked = (id: string, approvedIds: Set<string>): boolean => {
-    if (!prereqsOf(id).every((p) => approvedIds.has(p))) return false;
-    const minPercent = config.creditLocks[id];
-    if (minPercent !== undefined && creditsOf(approvedIds) / totalCredits < minPercent) {
-      return false;
-    }
-    return true;
   };
 
   const creditsMissingFor = (id: string, approvedIds: Set<string>): number => {
@@ -86,6 +75,9 @@ function buildCareerPlan(config: CareerConfig): CareerPlan {
     const needed = Math.ceil(minPercent * totalCredits);
     return Math.max(0, needed - creditsOf(approvedIds));
   };
+
+  const isCourseUnlocked = (id: string, approvedIds: Set<string>): boolean =>
+    courseById.has(id) && prereqsOf(id).every((prerequisite) => approvedIds.has(prerequisite)) && creditsMissingFor(id, approvedIds) === 0;
 
   return {
     ...config,
@@ -101,11 +93,14 @@ function buildCareerPlan(config: CareerConfig): CareerPlan {
   };
 }
 
-export const CAREERS: Record<CareerId, CareerPlan> = {
-  electronica: buildCareerPlan(electronicaConfig),
-  sistemas: buildCareerPlan(sistemasConfig),
-};
+export const CAREER_LIST = careerConfigs.map(buildCareerPlan);
+const careersById = new Map(CAREER_LIST.map((career) => [career.id, career]));
+export const DEFAULT_CAREER = careerConfigs[0].id;
 
-export const CAREER_LIST: CareerPlan[] = [CAREERS.electronica, CAREERS.sistemas];
+export function isCareerId(id: string): id is CareerId {
+  return careersById.has(id as CareerId);
+}
 
-export const getCareerPlan = (careerId: CareerId): CareerPlan => CAREERS[careerId];
+export function getCareerPlan(careerId: CareerId): CareerPlan {
+  return careersById.get(careerId)!;
+}

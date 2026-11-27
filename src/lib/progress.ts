@@ -1,153 +1,150 @@
-import { useCallback, useEffect, useState } from "react";
-import { getCareerPlan, type CareerId, type Course } from "@/data/curriculum";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getCareerPlan, type CareerId, type CareerPlan } from "@/data/curriculum";
 
-export const PASSING = 300;
-export const MAX_GRADE = 500;
+export const PASSING = 61;
+export const MAX_GRADE = 100;
+const LEGACY_MAX_GRADE = 500;
 export const MAX_ATTEMPTS = 4;
 
-// grades: Record<courseId, number[]> — ordered list of attempts (max 4)
 interface ProgressData {
-  careerId: CareerId;
   approved: Set<string>;
   grades: Record<string, number[]>;
+  legacyGrades: Record<string, number[]>;
 }
 
 const storageKeys = (prefix: string) => ({
-  approvedKey: `${prefix}:aprobadas:v1`,
-  gradesKey: `${prefix}:notas:v2`,
+  progress: `${prefix}:avance:v1`,
+  approved: `${prefix}:aprobadas:v1`,
+  grades: `${prefix}:notas:v2`,
 });
 
-function readStored(approvedKey: string, courseById: Map<string, Course>): Set<string> {
-  try {
-    const raw = window.localStorage.getItem(approvedKey);
-    if (!raw) return new Set();
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((id): id is string => typeof id === "string" && courseById.has(id)));
-  } catch {
-    return new Set();
-  }
+const emptyProgress = (): ProgressData => ({ approved: new Set(), grades: {}, legacyGrades: {} });
+
+function parse(raw: string | null): unknown {
+  try { return raw === null ? null : JSON.parse(raw); }
+  catch { return null; }
 }
 
-function readGrades(gradesKey: string, courseById: Map<string, Course>): Record<string, number[]> {
+function validGrade(value: unknown, max = MAX_GRADE): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= max;
+}
+
+function normalizeGrades(raw: unknown, plan: CareerPlan, max: number): Record<string, number[]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw).flatMap(([id, values]) => {
+    if (!plan.courseById.has(id) || !Array.isArray(values)) return [];
+    const attempts = values.filter((value) => validGrade(value, max)).slice(0, MAX_ATTEMPTS);
+    return attempts.length ? [[id, attempts]] : [];
+  }));
+}
+
+function normalize(approved: unknown, grades: unknown, legacyGrades: unknown, plan: CareerPlan): ProgressData {
+  return {
+    approved: new Set(Array.isArray(approved) ? approved.filter((id) => typeof id === "string" && plan.courseById.has(id)) : []),
+    grades: normalizeGrades(grades, plan, MAX_GRADE),
+    legacyGrades: normalizeGrades(legacyGrades, plan, LEGACY_MAX_GRADE),
+  };
+}
+
+function readProgress(plan: CareerPlan): ProgressData | null {
+  const keys = storageKeys(plan.storagePrefix);
   try {
-    const raw = window.localStorage.getItem(gradesKey);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-    const result: Record<string, number[]> = {};
-    for (const [k, v] of Object.entries(parsed)) {
-      if (Array.isArray(v) && courseById.has(k)) {
-        const attempts = v.filter((n): n is number => typeof n === "number" && n >= 0 && n <= MAX_GRADE);
-        if (attempts.length > 0) result[k] = attempts.slice(0, MAX_ATTEMPTS);
-      }
+    const raw = window.localStorage.getItem(keys.progress);
+    if (raw !== null) {
+      const value = parse(raw) as Partial<ProgressData> | null;
+      return normalize(value?.approved, value?.grades, value?.legacyGrades, plan);
     }
-    return result;
+    return normalize(parse(window.localStorage.getItem(keys.approved)), null, parse(window.localStorage.getItem(keys.grades)), plan);
   } catch {
-    return {};
+    return null;
   }
 }
 
-function isApproved(attempts: number[]): boolean {
-  return attempts.some((n) => n >= PASSING);
+function saveProgress(plan: CareerPlan, data: ProgressData): boolean {
+  const keys = storageKeys(plan.storagePrefix);
+  try {
+    const storage = window.localStorage;
+    storage.setItem(keys.progress, JSON.stringify({ ...data, approved: [...data.approved] }));
+    storage.removeItem(keys.approved);
+    storage.removeItem(keys.grades);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
+// Las páginas que usan este hook se montan con la carrera como key.
 export function useProgress(careerId: CareerId) {
   const plan = getCareerPlan(careerId);
-  const { approvedKey, gradesKey } = storageKeys(plan.storagePrefix);
-
-  const [data, setData] = useState<ProgressData>(() => ({
-    careerId,
-    approved: new Set(),
-    grades: {},
-  }));
-  const [loadedCareer, setLoadedCareer] = useState<CareerId | null>(null);
+  const [data, setData] = useState(() => readProgress(plan) ?? emptyProgress());
+  const current = useRef(data);
+  const unsaved = useRef(false);
+  const [saveError, setSaveError] = useState(false);
 
   useEffect(() => {
-    const activePlan = getCareerPlan(careerId);
-    const keys = storageKeys(activePlan.storagePrefix);
-    setData({
-      careerId,
-      approved: readStored(keys.approvedKey, activePlan.courseById),
-      grades: readGrades(keys.gradesKey, activePlan.courseById),
-    });
-    setLoadedCareer(careerId);
-  }, [careerId]);
-
-  useEffect(() => {
-    // Evita sobrescribir el almacenamiento de la nueva carrera antes de hidratarla.
-    if (loadedCareer !== careerId || data.careerId !== careerId) return;
-    try { window.localStorage.setItem(approvedKey, JSON.stringify([...data.approved])); } catch { /* noop */ }
-    try { window.localStorage.setItem(gradesKey, JSON.stringify(data.grades)); } catch { /* noop */ }
-  }, [data, loadedCareer, careerId, approvedKey, gradesKey]);
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === approvedKey || e.key === gradesKey) {
-        setData((prev) => ({
-          careerId,
-          approved: e.key === approvedKey ? readStored(approvedKey, plan.courseById) : prev.approved,
-          grades: e.key === gradesKey ? readGrades(gradesKey, plan.courseById) : prev.grades,
-        }));
+    const keys = Object.values(storageKeys(plan.storagePrefix));
+    const sync = (event: StorageEvent) => {
+      if (unsaved.current || (event.key !== null && !keys.includes(event.key))) return;
+      const next = readProgress(plan);
+      if (next) {
+        current.current = next;
+        setData(next);
       }
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [careerId, approvedKey, gradesKey, plan]);
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, [plan]);
 
-  const toggle = useCallback((id: string) => {
-    setData((prev) => {
-      const approved = new Set(prev.approved);
+  const update = useCallback((change: (previous: ProgressData) => ProgressData) => {
+    const previous = unsaved.current ? current.current : readProgress(plan) ?? current.current;
+    const next = change(previous);
+    current.current = next;
+    if (next !== previous) {
+      unsaved.current = !saveProgress(plan, next);
+      setSaveError(unsaved.current);
+    }
+    setData(next);
+  }, [plan]);
+
+  const toggle = (id: string) => {
+    if (!plan.courseById.has(id)) return;
+    update((previous) => {
+      const approved = new Set(previous.approved);
       if (approved.has(id)) approved.delete(id); else approved.add(id);
-      return { ...prev, approved };
+      return { ...previous, approved };
     });
-  }, []);
-
-  const setMany = useCallback((ids: string[], value: boolean) => {
-    setData((prev) => {
-      const approved = new Set(prev.approved);
-      for (const id of ids) { if (value) approved.add(id); else approved.delete(id); }
-      return { ...prev, approved };
-    });
-  }, []);
-
-  // Añade o edita un intento. index = posición (0-based). nota = null → elimina ese intento y los siguientes.
-  const setAttempt = useCallback((id: string, index: number, nota: number | null) => {
-    setData((prev) => {
-      const grades = { ...prev.grades };
-      const approved = new Set(prev.approved);
-      const current = grades[id] ? [...grades[id]] : [];
-
-      if (nota === null) {
-        current.splice(index);
-      } else {
-        current[index] = nota;
-        current.splice(index + 1);
-      }
-
-      if (current.length === 0) {
-        delete grades[id];
-        approved.delete(id);
-      } else {
-        grades[id] = current;
-        if (isApproved(current)) approved.add(id); else approved.delete(id);
-      }
-      return { ...prev, approved, grades };
-    });
-  }, []);
-
-  const reset = useCallback(() => {
-    setData({ careerId, approved: new Set(), grades: {} });
-  }, [careerId]);
-
-  const loaded = loadedCareer === careerId;
-  return {
-    approved: data.careerId === careerId ? data.approved : new Set<string>(),
-    grades: data.careerId === careerId ? data.grades : {},
-    loaded,
-    toggle,
-    setMany,
-    setAttempt,
-    reset,
   };
+
+  const setMany = (ids: string[], value: boolean) => {
+    update((previous) => {
+      const approved = new Set(previous.approved);
+      for (const id of ids) {
+        if (!plan.courseById.has(id)) continue;
+        if (value) approved.add(id); else approved.delete(id);
+      }
+      return { ...previous, approved };
+    });
+  };
+
+  // Eliminar un intento elimina también los posteriores, para mantener la secuencia.
+  const setAttempt = (id: string, index: number, grade: number | null) => {
+    if (!plan.courseById.has(id) || !Number.isInteger(index) || index < 0 || index >= MAX_ATTEMPTS) return;
+    if (grade !== null && !validGrade(grade)) return;
+    update((previous) => {
+      const attempts = [...(previous.grades[id] ?? [])];
+      if (index > attempts.length || (grade === null && index === attempts.length)) return previous;
+      const grades = { ...previous.grades };
+      const approved = new Set(previous.approved);
+      if (grade === null) attempts.splice(index);
+      else attempts[index] = grade;
+
+      if (attempts.length) grades[id] = attempts;
+      else delete grades[id];
+      if (attempts.some((value) => value >= PASSING)) approved.add(id);
+      else approved.delete(id);
+      return { ...previous, approved, grades };
+    });
+  };
+
+  return { ...data, saveError, toggle, setMany, setAttempt, reset: () => update(emptyProgress) };
 }

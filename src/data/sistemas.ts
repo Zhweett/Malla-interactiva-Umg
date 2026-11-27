@@ -1,10 +1,10 @@
 import type { CareerConfig } from "@/data/curriculum";
 
-export const sistemasConfig: CareerConfig = {
-  id: "sistemas",
+export const sistemasConfig = {
+  id: "sistemas" as const,
   name: "Ingeniería de Sistemas",
   shortName: "Ing. de Sistemas",
-  badge: "Ingeniería de Sistemas · Pensum actualizado",
+  referenceUrl: "https://umg.edu.gt/ingenieria/sistemas",
   description:
     "Programa enfocado en el desarrollo de software, algoritmos, arquitectura computacional, bases de datos, redes y gestión de tecnologías de la información.",
   storagePrefix: "malla-sistemas",
@@ -166,4 +166,4 @@ export const sistemasConfig: CareerConfig = {
     etica: 0.80,
     gestproy: 0.80,
   },
-};
+} satisfies CareerConfig;
