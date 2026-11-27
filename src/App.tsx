@@ -7,8 +7,8 @@ export default function App() {
   const route = useRoute();
   const { page, careerId } = parseRoute(route);
 
-  if (page === "avance") return <AvancePage careerId={careerId} />;
-  if (page === "malla") return <MallaPage careerId={careerId} />;
+  if (page === "avance") return <AvancePage key={careerId} careerId={careerId} />;
+  if (page === "malla") return <MallaPage key={careerId} careerId={careerId} />;
 
   return <LandingPage />;
 }
